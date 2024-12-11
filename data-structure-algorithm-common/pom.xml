@@ -1,0 +1,52 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+
+	<groupId>com.my.learn</groupId>
+	<artifactId>data-structure-algorithm-common</artifactId>
+	<version>1.0.0</version>
+	<packaging>jar</packaging>
+	<description>data structure algorithm common</description>
+	<name>data-structure-algorithm-common</name>
+
+	<parent>
+		<groupId>com.my.learn</groupId>
+		<artifactId>data-structure-algorithm</artifactId>
+		<version>1.0.0</version>
+	</parent>
+
+	<build>
+		<resources>
+			<resource>
+				<directory>src/main/resources</directory>
+				<includes>
+					<include>constant.properties</include>
+					<include>config.json</include>
+					<include>constant-${env}.properties</include>
+					<include>static/**</include>
+					<include>templates/**</include>
+					<include>mq/${env}/**</include>
+				</includes>
+				<filtering>true</filtering>
+			</resource>
+		</resources>
+		<filters>
+			<filter>src/main/resources/constant.properties</filter>
+			<filter>src/main/resources/constant-${env}.properties</filter>
+			<filter>src/main/resources/config.json</filter>
+		</filters>
+		<plugins>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-resources-plugin</artifactId>
+				<configuration>
+					<delimiters>
+						<delimiter>@</delimiter>
+					</delimiters>
+					<useDefaultDelimiters>false</useDefaultDelimiters>
+				</configuration>
+			</plugin>
+		</plugins>
+	</build>
+</project>
+

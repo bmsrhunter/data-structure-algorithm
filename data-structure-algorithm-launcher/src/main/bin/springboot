@@ -1,0 +1,305 @@
+#!/bin/bash
+###################################################################################
+# File Name     : springboot
+# Description   : spring-boot start script
+# Language      : English
+# Version       : 0.1
+# Author        : wujingrun
+# Mail          : jingrun.wu@wifiin.com
+# Created Time  : 2017-03-29 17:39:02 PM
+###################################################################################
+# Source function library.
+. /etc/rc.d/init.d/functions
+
+# Source networking configuration.
+. /etc/sysconfig/network
+
+# Source springboot configuration.
+if [ -f /etc/sysconfig/springboot ]; then
+    . /etc/sysconfig/springboot
+fi
+
+# Source java enverionment variables.
+if [ -f /etc/profile.d/java.sh ];then
+    . /etc/profile.d/java.sh
+else
+    . /etc/profile
+fi
+
+# Variables define
+CMD=$1
+PORT=$2
+
+# Color variables define
+PURPLE='\033[35m'
+FLASHING='\033[31;5m'
+NORMAL='\033[0m'
+
+# springboot home variables define
+PRG="$0"
+PRG_DIR=`dirname "$PRG"`
+[ -z "$SPRINGBOOT_HOME" ] && SPRINGBOOT_HOME=`cd "$PRG_DIR" >/dev/null; pwd`
+[ -r $PRG ] || exit 5
+[ -x $PRG ] || chmod u+x,g+x $PRG
+
+# Directory variables define
+LOG_DIR="/data/www/wifiin/logs/ws"
+PID_DIR="/var/run/springboot"
+LOCK_DIR="/var/lock/subsys/springboot"
+
+# File variables define
+LOG_FILE="${LOG_DIR}/speedin-backend-console-${PORT}.log"
+PID_FILE="${PID_DIR}/speedin-backend-console-$PORT.pid"
+LOCK_FILE="${LOCK_DIR}/speedin-backend-console-$PORT"
+
+ERROR_LOG_DIR=${ERROR_LOG_DIR:-"/data/www/wifiin/logs/jvm/springboot"}
+
+# Java variable define
+JAVA_OPTS=""
+JAVA_OPTS=" $JAVA_OPTS -server "
+JAVA_OPTS=" $JAVA_OPTS -XX:+UseG1GC "
+JAVA_OPTS=" $JAVA_OPTS -Xmx2G -Xms2G "
+JAVA_OPTS=" $JAVA_OPTS -XX:LargePageSizeInBytes=128M "
+JAVA_OPTS=" $JAVA_OPTS -XX:MaxDirectMemorySize=512m "
+JAVA_OPTS=" $JAVA_OPTS -XX:+AlwaysPreTouch  -XX:MaxTenuringThreshold=2 -XX:+CMSClassUnloadingEnabled "
+JAVA_OPTS=" $JAVA_OPTS -XX:+ExplicitGCInvokesConcurrentAndUnloadsClasses -XX:+ExplicitGCInvokesConcurrent "
+JAVA_OPTS=" $JAVA_OPTS -XX:-UseBiasedLocking -XX:+UseCodeCacheFlushing -XX:SoftRefLRUPolicyMSPerMB=0 "
+JAVA_OPTS=" $JAVA_OPTS -XX:+UseLargePages -XX:-OmitStackTraceInFastThrow -XX:-UseCounterDecay "
+JAVA_OPTS=" $JAVA_OPTS -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=${ERROR_LOG_DIR} "
+JAVA_OPTS=" $JAVA_OPTS -XX:ErrorFile=${ERROR_LOG_DIR}/hs_err_%p.log -XX:+PrintCommandLineFlags "
+JAVA_OPTS=" $JAVA_OPTS -XX:+ParallelRefProcEnabled "
+JAVA_OPTS=" $JAVA_OPTS -Djava.security.egd=file:/dev/urandom "
+JAVA_OPTS=" $JAVA_OPTS -XX:+UseNUMA "
+JAVA_OPTS=" $JAVA_OPTS -XX:StringDeduplicationAgeThreshold=3 -XX:+UseStringDeduplication "
+JAVA_OPTS=" $JAVA_OPTS -XX:+PrintClassHistogram -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+PrintHeapAtGC "
+JAVA_OPTS=" $JAVA_OPTS -XX:+PrintGCApplicationStoppedTime -XX:+PrintGCApplicationConcurrentTime "
+JAVA_OPTS=" $JAVA_OPTS -Xloggc:${ERROR_LOG_DIR}/gc_%p.log "
+JAVA_OPTS=" $JAVA_OPTS -XX:+UseGCLogFileRotation -XX:NumberOfGCLogFiles=2 -XX:GCLogFileSize=1024M "
+JAVA_OPTS=" $JAVA_OPTS -Djava.nio.channels.spi.SelectorProvider=sun.nio.ch.EPollSelectorProvider ";
+#log4j2.asyncLoggerConfigWaitStrategy 取值有Block 低cpu高延迟；Timeout 高cpu低延迟；Sleep 中cpu中延迟；Yield 中cpu中延迟，比Sleep消耗更多cpu用来获取消息
+JAVA_OPTS=" $JAVA_OPTS -Dlog4j2.asyncLoggerWaitStrategy=Block ";
+
+# spring-boot start arguements define
+SPRINGBOOT_JVM_ARG=""
+SPRINGBOOT_JVM_ARG=" $SPRINGBOOT_JVM_ARG -Dserver.port=$PORT "
+JVM_ARGS=${JVM_ARGS:-"$JAVA_OPTS $SPRINGBOOT_JVM_ARG -jar `dirname $0`/*.jar"}
+SPRINGBOOT_PIDFILE_TIMEOUT=${SPRINGBOOT_PIDFILE_TIMEOUT:-20}
+SPRINGBOOT_SHUTDOWN_TIMEOUT=${SPRINGBOOT_SHUTDOWN_TIMEOUT:-100}
+prog="springboot $PORT"
+
+warning_info(){
+    echo -e "${FLASHING}Warning!!!${NORMAL} ${PURPLE}The $1 is $2${NORMAL}"
+    echo $"Usage: $0 {start|stop|restart|status|force-stop|force-restart} <port> {dev|uat|pro}"
+    echo "<port> must be between 0 and 65535"
+    exit $3
+}
+port_fun() {
+    if [ -z "$PORT" ];then
+        warning_info 'port' 'empty' 3
+    fi
+    if ! [ $PORT -ge 0 -a $PORT -le 65535 ];then
+        warning_info 'port' 'not expected' 4
+    fi
+}
+
+# start function
+start() {
+    port_fun
+    # Check that networking is up.
+    [ ${NETWORKING} = "no" ] && exit 1
+
+    # Check that log directory is exist
+    [ -d $LOG_DIR ] || mkdir -p $LOG_DIR
+
+    # Check that error log directory is exist
+    [ -d $ERROR_LOG_DIR ] || mkdir -p $ERROR_LOG_DIR
+
+    # Check that pid directory is exist
+    if [ ! -d $PID_DIR ] ;then
+    CURRENT_UID=`id -u`
+    if [ "$CURRENT_UID" = "0" ];then
+        mkdir -p $PID_DIR
+        chown -R developer.developer $PID_DIR
+    else
+        echo "$PID_DIR does not exist,please use the root user to create the directory and grant developer permissions."
+        echo "mkdir -p $PID_DIR"
+        echo "chown -R developer.developer $PID_DIR"
+    fi
+    fi
+    # Check that lock directory is exist
+    if [ ! -d $LOCK_DIR ];then
+    CURRENT_UID=`id -u`
+        if [ "$CURRENT_UID" = "0" ];then
+        mkdir -p $LOCK_DIR
+        chown -R developer.developer $LOCK_DIR
+    else
+            echo "$LOCK_DIR does not exist,please use the root user to create the directory and grant developer permissions."
+            echo "mkdir -p $LOCK_DIR"
+            echo "chown -R developer.developer $LOCK_DIR"
+        fi
+    fi
+    SPRINGBOOT_JVM_ARG=" `echo $SPRINGBOOT_JVM_ARG` "
+    if [ `ps -elf|grep "java"|grep "$SPRINGBOOT_JVM_ARG"|awk '{print $4}'|wc -l` -eq 0 ];then
+        if [ -f ${LOG_FILE} ];then
+            > ${LOG_FILE}
+        fi
+        echo -n $"Starting $prog: "
+        nohup java $JVM_ARGS >> ${LOG_FILE} 2>&1 &
+        sleep 2
+        PID=`ps -elf|grep "java"|grep "$SPRINGBOOT_JVM_ARG"|awk '{print $4}'`
+        [ -n "$PID" ] &&  echo $PID > ${PID_FILE}
+        RETVAL=$?
+        if [ $RETVAL -ne 0 ];then
+                echo "To write PID file failed"
+        fi
+    else
+        echo -n $"The process $prog: already exists"
+        echo_failure
+    fi
+    RETVAL=$?
+        if [ $RETVAL -eq 0 ]; then
+                timeout=0;
+                while : ; do
+                        [ ! -f $PID_FILE ] || break
+                        if [ $timeout -ge $SPRINGBOOT_PIDFILE_TIMEOUT ]; then
+                                RETVAL=1
+                                break
+                        fi
+                        sleep 1 && echo -n "."
+                        timeout=$((timeout+1))
+                done
+        fi
+        [ $RETVAL -eq 0 ] && touch $LOCK_FILE
+        [ $RETVAL -eq 0 ] && echo_success
+        [ $RETVAL -ne 0 ] && echo_failure
+        echo
+        return $RETVAL
+}
+
+# stop function
+stop(){
+    port_fun
+        echo -n $"Stopping $prog: "
+        if [ -f $PID_FILE ] && [ "`ps -elf|grep $(cat $PID_FILE)|grep -v grep|wc -l`" -ne 0 ];then
+                kill -15 `cat $PID_FILE`
+                RETVAL=$?
+		sleep 5
+		if [ -f $PID_FILE ] && [ "`ps -elf|grep $(cat $PID_FILE)|grep -v grep|wc -l`" -ne 0 ];then
+			force_stop
+			exit 0
+		fi
+
+                if [ $RETVAL -eq 0 ];then
+                        [ -f $LOCK_FILE ] && rm -f $LOCK_FILE
+            timeout=0
+                    while : ; do
+                        [ "`ps -elf|grep $(cat $PID_FILE)|grep -v grep|wc -l`" -ne 0 ] ||  break
+                        if [ $timeout -ge $SPRINGBOOT_SHUTDOWN_TIMEOUT ]; then
+                                echo
+                                RETVAL=force_stop
+                                return $RETVAL
+                        fi
+                        sleep 2 && echo -n "."
+                        timeout=$((timeout+2))
+                    done
+                        echo_success
+                        echo
+                else
+                        echo_failure
+                        if [ ! -e $LOCK_FILE ]; then
+                                RETVAL=0
+                        else
+                                rm -f $LOCK_FILE
+                                RETVAL=$?
+                        fi
+                        echo
+                fi
+        else
+                echo_failure
+                echo
+                [ -f $LOCK_FILE ] && rm -f $LOCK_FILE
+        fi
+        return $RETVAL
+
+}
+
+# restart function
+restart() {
+    stop
+    start
+}
+
+# force stop function
+force_stop() {
+    port_fun
+    echo -n $"Stopping $prog: "
+    if [ -f $PID_FILE ] && [ "`ps -elf|grep $(cat $PID_FILE)|grep -v grep|wc -l`" -ne 0 ];then
+            kill -9 `cat $PID_FILE`
+        RETVAL=$?
+        if [ $RETVAL -eq 0 ];then
+            [ -f $LOCK_FILE ] && rm -f $LOCK_FILE
+            echo_success
+            echo
+        else
+            echo_failure
+            if [ ! -e $LOCK_FILE ]; then
+                            RETVAL=0
+                    else
+                            rm -f $LOCK_FILE
+                            RETVAL=$?
+                    fi
+                    echo
+        fi
+    else
+        echo_failure
+        echo
+        [ -f $LOCK_FILE ] && rm -f $LOCK_FILE
+    fi
+    return $RETVAL
+}
+
+# force restart function
+force_restart() {
+    force_stop
+    start
+}
+
+# status function
+rhstatus() {
+    port_fun
+    status -p $PID_FILE springboot-${PORT}
+}
+
+# main function
+case "$CMD" in
+start)
+        start
+        ;;
+
+stop)
+        stop
+        ;;
+
+restart)
+        restart
+        ;;
+
+status)
+        rhstatus
+        ;;
+
+force-stop)
+    force_stop
+        ;;
+
+force-restart)
+    force_restart
+    ;;
+
+*)
+        echo $"Usage: $0 {start|stop|restart|status|force-stop|force-restart} <port>"
+        exit 2
+esac
+
+exit $?
+

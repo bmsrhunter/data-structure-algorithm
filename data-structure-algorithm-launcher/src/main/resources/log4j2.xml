@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration status="INFO" monitorInterval="5">
+    <Properties>
+        <Property name="server.port">32091</Property>
+        <Property name="server.log.path">/data/www/wifiin/logs/ws</Property>
+        <Property name="server.log.console.level">info</Property>
+        <Property name="server.log.file.level">info</Property>
+    </Properties>
+    <Appenders>
+        <Console name="Console" target="SYSTEM_OUT">
+            <PatternLayout pattern="[%-level-speedin-backend] %d{yyyy-MM-dd,HH:mm:ss.SSS}|%m%n"/>
+            <ThresholdFilter level="${sys:server.log.console.level}" onMatch="ACCEPT" onMismatch="DENY"/>
+        </Console>
+        <RollingFile name="RollingFile"
+                     fileName="${sys:server.log.path}/speedin-backend-${sys:server.port}.log"
+                     filePattern="${sys:server.log.path}/speedin-backend-${sys:server.port}.log.%d{yyyy-MM-dd}.gz">
+            <PatternLayout pattern="[%-level-speedin-backend] %d{yyyy-MM-dd,HH:mm:ss.SSS}|%m%n"/>
+            <ThresholdFilter level="${sys:server.log.file.level}" onMatch="ACCEPT" onMismatch="DENY"/>
+            <Policies>
+                <TimeBasedTriggeringPolicy modulate="true" interval="1"/>
+            </Policies>
+        </RollingFile>
+        <Async name="AsyncConsole">
+            <AppenderRef ref="Console"/>
+        </Async>
+        <Async name="AsyncRollingFile">
+            <AppenderRef ref="RollingFile"/>
+        </Async>
+    </Appenders>
+    <Loggers>
+        <AsyncRoot level="${sys:server.log.console.level}">
+            <appender-ref ref="AsyncConsole"/>
+        </AsyncRoot>
+        <AsyncLogger name="com.wifiin" level="${sys:server.log.file.level}" additivity="false">
+            <appender-ref ref="AsyncRollingFile"/>
+        </AsyncLogger>
+    </Loggers>
+</Configuration>
